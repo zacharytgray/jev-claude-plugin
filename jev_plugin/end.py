@@ -61,7 +61,8 @@ def _trim(text, want=frozenset(), cap=EVIDENCE_EACH):
     head and tail alone cut out a quote from the middle of a long read (round 25, S4)."""
     if len(text) <= cap:
         return text
-    lines = text.split("\n")
+    # long lines (a contract paragraph, a grep hit) become 400-character pieces
+    lines = [l[i:i + 400] for l in text.split("\n") for i in range(0, max(len(l), 1), 400)]
     if want:
         # rank 3-line spans by claim words, keep the best until the budget is spent
         spans = []

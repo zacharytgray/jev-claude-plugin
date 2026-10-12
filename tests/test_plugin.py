@@ -375,6 +375,12 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn("Superior Proposal means", ev["r1"])
         self.assertLessEqual(len(ev["r1"]), end.EVIDENCE_EACH + 400)
 
+    def test_finds_a_quote_inside_a_long_line(self):
+        para = "x" * 6000 + " Superior Proposal means a bona fide written Acquisition Proposal " + "y" * 6000
+        ev = end.evidence([("Bash", {"command": "grep -n Superior a.txt"}, para)],
+                          ["Superior Proposal means a bona fide written Acquisition Proposal"])
+        self.assertIn("bona fide", ev["r1"])
+
 
 class ConfigAndHookTests(Base):
     def test_bad_file_means_defaults(self):
