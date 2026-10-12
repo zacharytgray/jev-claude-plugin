@@ -6,6 +6,7 @@ code decides from the answers; jev never sees more than one window.
 
 import os
 import re
+from collections import defaultdict
 
 from . import config, jev, transcript, windows
 
@@ -15,6 +16,10 @@ INJECTION_CUT = 0.5
 SHORT_CHARS = 4000
 FAILURE_TAIL_LINES = 20
 MAX_WINDOWS = 128
+# a flagged window is cut again into windows this small, so only the part that
+# gives the agent a task is withheld, not the whole window (round 30)
+NARROW_LINES = 10
+NARROW_CHARS = 1000
 
 RELEVANT = jev.noul(
     "The `question` was asked by an agent working on the user's `request` about some files. "
@@ -78,10 +83,7 @@ def judge(lines, request, why, command, relevance, injection, failure=False, sou
     # injection gets its own request on request and chunk only, the paper's form
     reqs = []
     for span in spans:
-        # the paper's chunk shape: where it came from, which lines, the text. as a bare string,
-        # jev caught 61 of 100 planted attacks; with path and lines, 98 (round 25, S2)
-        chunk = {"path": source, "lines": "%d-%d" % (first + span[0], first + span[1] - 1),
-                 "text": windows.window_text(lines, span)}
+        chunk = _chunk(lines, span, source, first)
         if use_rel:
             reqs.append(({"request": request, "question": question, "command": command,
                           "chunks": [chunk]}, {"relevant": RELEVANT}))
@@ -97,13 +99,52 @@ def judge(lines, request, why, command, relevance, injection, failure=False, sou
     if fallback or not use_rel:
         kept = [True] * len(spans)
     flagged = [p >= INJECTION_CUT for p in inj]
+    narrowed = 0
+    if any(flagged):
+        flagged, narrowed = narrow(lines, spans, flagged, request, source, first)
     atomic = windows.atomic_spans(lines) if failure else ()
     tail = FAILURE_TAIL_LINES if failure else 0
     show, withheld = windows.merge(len(lines), spans, kept, flagged, atomic, tail)
-    info = {"windows": len(spans), "kept": sum(kept), "flagged": sum(flagged),
+    info = {"windows": len(spans), "kept": sum(kept), "flagged": sum(1 for f in flagged if f),
+            "narrowed": narrowed, "withheld_lines": sum(withheld),
             "fallback": fallback, "relevance": use_rel, "failure": failure,
             "rel": [round(r, 3) for r in rel], "inj": [round(p, 3) for p in inj]}
     return show, withheld, info
+
+
+def _chunk(lines, span, source, first):
+    # the paper's chunk shape: where it came from, which lines, the text. as a bare string,
+    # jev caught 61 of 100 planted attacks; with path and lines, 98 (round 25, S2)
+    return {"path": source, "lines": "%d-%d" % (first + span[0], first + span[1] - 1),
+            "text": windows.window_text(lines, span)}
+
+
+def narrow(lines, spans, flagged, request, source, first):
+    """cut each flagged window again into small windows and ask again. a flagged
+    window keeps only the lines of its flagged small windows; if none is flagged,
+    the whole window stays flagged. -> (flags, number of small windows asked)."""
+    subs = []
+    for i, (a, b) in enumerate(spans):
+        if flagged[i] and b - a > NARROW_LINES:
+            for x, y in windows.cut(lines[a:b], NARROW_LINES, NARROW_CHARS):
+                subs.append((i, (a + x, a + y)))
+    # too many, or jev fails: the whole windows stay withheld, never shown
+    if not subs or len(subs) > MAX_WINDOWS:
+        return flagged, 0
+    try:
+        answers = jev.ask_many([({"request": request, "chunks": [_chunk(lines, s, source, first)]},
+                                 {"injection": INJECTION}) for _, s in subs])
+    except jev.JevError:
+        return flagged, 0
+    hot = defaultdict(set)
+    for (i, (a, b)), ans in zip(subs, answers):
+        if jev.noul_of(ans["injection"]) >= INJECTION_CUT:
+            hot[i].update(range(a, b))
+    out = list(flagged)
+    for i in {i for i, _ in subs}:
+        if hot[i]:
+            out[i] = hot[i]
+    return out, len(subs)
 
 
 def _why(event, items):

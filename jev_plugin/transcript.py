@@ -19,10 +19,29 @@ def _state_path(session_id):
     return os.path.join(config.home(), "state", safe + ".json")
 
 
+EARLIER = 2
+
+
 def save_request(session_id, prompt):
+    """the newest prompt, and the two before it: "yes, push it" needs its context."""
     os.makedirs(os.path.join(config.home(), "state"), exist_ok=True)
+    old = _load(session_id)
+    earlier = [x for x in (old.get("earlier") or []) + [old.get("request")] if x][-EARLIER:]
     with open(_state_path(session_id), "w") as f:
-        json.dump({"request": prompt}, f)
+        json.dump({"request": prompt, "earlier": earlier}, f)
+
+
+def _load(session_id):
+    try:
+        with open(_state_path(session_id)) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def saved_earlier(session_id):
+    return [x for x in _load(session_id).get("earlier") or [] if isinstance(x, str)]
 
 
 def saved_request(session_id):

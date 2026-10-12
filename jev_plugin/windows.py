@@ -73,9 +73,11 @@ def atomic_spans(lines):
 def merge(n, spans, kept, flagged, atomic=(), keep_tail=0):
     """decide each line from its windows.
 
-    kept[i] and flagged[i] are the verdicts for spans[i]. a line is shown when
-    any window holding it is kept; it is withheld when every window holding it
-    is flagged. returns (show, withheld), two lists of bools of length n.
+    kept[i] and flagged[i] are the verdicts for spans[i]. flagged[i] is a bool,
+    or the set of line indexes the injection filter narrowed that window down to.
+    a line is shown when any window holding it is kept; it is withheld when every
+    window holding it flags it. returns (show, withheld), two lists of bools of
+    length n.
     """
     show = [False] * n
     seen = [0] * n
@@ -85,7 +87,7 @@ def merge(n, spans, kept, flagged, atomic=(), keep_tail=0):
             seen[i] += 1
             if k:
                 show[i] = True
-            if f:
+            if f is True or (isinstance(f, (set, frozenset)) and i in f):
                 hot[i] += 1
     withheld = [seen[i] > 0 and hot[i] == seen[i] for i in range(n)]
     for a, b in atomic:

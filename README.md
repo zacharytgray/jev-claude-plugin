@@ -11,19 +11,22 @@ The design, its open questions and the evidence behind each choice live in the `
 
 | point | hook | what it does | starts |
 |---|---|---|---|
-| after the call | `PostToolUse` on Read and Bash | cuts long output into windows of at most 40 lines and 4,000 characters, each overlapping the next by half; each window, with its path and line range, gets two Jev requests, one for relevance and one for injection; keeps windows with relevance of 0.1 or more, withholds lines whose windows are all flagged at 0.5 or more; Read keeps its original line numbers | on |
-| before the call | `PreToolUse`, every tool | Jev auto mode, in place of Claude Code's own: a code floor first (deletes, pushes, publishing, credential reads, network-to-shell, remote shells, services, installs, sudo, outward MCP tools always go to you), then jevguard's risk Score and five yes/no questions, generalized past Bash; allow, deny with a reason, or ask you | off |
+| after the call | `PostToolUse` on Read and Bash | cuts long output into windows of at most 40 lines and 4,000 characters, each overlapping the next by half; each window, with its path and line range, gets two Jev requests, one for relevance and one for injection; keeps windows with relevance of 0.1 or more; a window flagged at 0.5 or more is cut again into windows of 10 lines and asked again, and only the lines of the flagged small windows are withheld; Read keeps its original line numbers | on |
+| before the call | `PreToolUse`, every tool | Jev auto mode, in place of Claude Code's own: jevguard's risk Score and five yes/no questions, generalized past Bash, plus whether your own request asked for the call; allow, deny with a reason, or ask you. A code floor (deletes, pushes, publishing, credential reads, network-to-shell, remote shells, services, installs, sudo, outward MCP tools) is never allowed on Jev's word alone: deletes, pushes, publishing, remote shells, services, installs and outward tools are allowed only when your request asked for them | off |
 | start | `UserPromptSubmit` | suggests an effort and a model for the request (shown to you; no hook can set either), and hints skills from your words | off |
 | end | `Stop` | splits the final reply into claims and checks each against this turn's tool results; sends the agent back once if a claim has nothing behind it | off |
 
-Outputs of 4,000 characters or less skip relevance and are only checked for injection. On a failure the hook can see
+Outputs of 4,000 characters or less skip relevance and are only checked for injection. If narrowing finds nothing, or
+fails, the whole flagged window stays withheld. On a failure the hook can see
 (a traceback, a failed test summary), the question becomes "why did this fail", stack traces are never split, and the
 last 20 lines always stay. When no window passes, the plain output goes through.
 
 Jev auto mode answers every tool call that can touch the machine, in every permission mode but `bypassPermissions`,
-so it stands in for Claude Code's own auto mode: run Claude Code in the default mode with the plugin on. Calls it is
-unsure about come to you as a normal prompt; in headless `claude -p` they are refused. If Jev fails, Claude Code's own
-permissions apply. In a sandbox check on Claude Code 2.1.296, `PreToolUse` fired for read-only Bash commands and for
+so it stands in for Claude Code's own auto mode: run Claude Code in the default mode with the plugin on. Jev sees
+your latest request and the two before it, never text from files or tool output as your words. A credential leaving
+the machine is denied even when you ask for it. Deleting data or messaging people is denied unless you clearly asked. Calls it is
+unsure about come to you as a normal prompt; in headless `claude -p` they are refused. If Jev fails, a floor call comes
+to you and any other call gets Claude Code's own permissions. In a sandbox check on Claude Code 2.1.296, `PreToolUse` fired for read-only Bash commands and for
 Reads inside the project, which `PermissionRequest` never saw.
 
 What the paid tests changed (round 25, 8,801 Jev requests in all; the fixes were rerun on the same items):
