@@ -69,6 +69,7 @@ def noul(instructions, true=None, false=None):
 noul_of = jev_client.noul_of
 score_of = jev_client.score_of
 choice_of = jev_client.choice_of
+probabilities_of = jev_client.probabilities_of
 score = jev_client.score
 choice = jev_client.choice
 

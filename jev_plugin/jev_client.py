@@ -363,6 +363,13 @@ def choice_of(ans, allowed):
     return pick, _confidence(ans)
 
 
+def probabilities_of(ans, allowed):
+    # -> {option: probability} for a choice. with no probabilities, the pick gets 1.0
+    pick, _ = choice_of(ans, allowed)
+    probs = _probabilities(ans, list(allowed))
+    return probs if probs else {pick: 1.0}
+
+
 def score_of(ans, levels):
     # -> (score, confidence). levels is the rubric list handed to score().
     # the score spans 0 .. len(levels)-1 and may fall between integers
