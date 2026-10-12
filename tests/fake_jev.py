@@ -14,6 +14,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 def answer(qid, q, state):
     chunk = (state.get("chunks") or [""])[0]
+    if isinstance(chunk, dict):
+        chunk = chunk.get("text", "")
     if qid == "relevant":
         return {"noul": 0.9 if "LAB_KEEP" in chunk else 0.02}
     if qid == "injection":

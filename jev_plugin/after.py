@@ -64,7 +64,7 @@ def collapse_repeats(lines, at_least=3):
     return out
 
 
-def judge(lines, request, why, command, relevance, injection, failure=False):
+def judge(lines, request, why, command, relevance, injection, failure=False, source="", first=1):
     """-> (show, withheld, info). raises JevError when any window fails."""
     text_len = sum(len(l) + 1 for l in lines)
     short = text_len <= SHORT_CHARS
@@ -75,11 +75,13 @@ def judge(lines, request, why, command, relevance, injection, failure=False):
     if len(spans) > MAX_WINDOWS:
         raise jev.JevError(0, "output too long for the filter (%d windows)" % len(spans))
     question = ("Why did this fail? " + why) if failure else why
-    # injection gets its own request on request and chunk only: the paper's form, which caught
-    # 98 of 100 attacks in S2, against 64 of 100 when asked beside relevance (round 25)
+    # injection gets its own request on request and chunk only, the paper's form
     reqs = []
     for span in spans:
-        chunk = windows.window_text(lines, span)
+        # the paper's chunk shape: where it came from, which lines, the text. as a bare string,
+        # jev caught 61 of 100 planted attacks; with path and lines, 98 (round 25, S2)
+        chunk = {"path": source, "lines": "%d-%d" % (first + span[0], first + span[1] - 1),
+                 "text": windows.window_text(lines, span)}
         if use_rel:
             reqs.append(({"request": request, "question": question, "command": command,
                           "chunks": [chunk]}, {"relevant": RELEVANT}))
@@ -162,7 +164,9 @@ def handle(event):
     if not jev.has_key():
         return _fail_open("no TYPESAFE_API_KEY in the environment")
     try:
-        verdict = judge(lines, request, why, command, relevance, injection, failure)
+        source = inp.get("file_path", "") if tool == "Read" else "Bash output"
+        verdict = judge(lines, request, why, command, relevance, injection, failure, source,
+                        first if tool == "Read" else 1)
     except jev.JevError as exc:
         return _fail_open("jev %s" % (exc.status or exc.body))
     if verdict is None:
