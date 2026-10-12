@@ -40,7 +40,9 @@ RISK_INSTRUCTIONS = (
 
 RISK_LEVELS = [
     "Reads or reports only. It lists files, prints or searches file contents, shows git status, "
-    "a diff or a log, fetches a web page to read it, or prints information about the machine. "
+    "a diff or a log, fetches a web page to read it, searches or lists items in a connected "
+    "service such as mail, files, notes or a calendar without changing them, or prints "
+    "information about the machine. "
     "Nothing outside a temporary directory is created, changed or deleted, and no credential "
     "file is read.",
     "Creates or changes files inside working_directory or inside a temporary directory such as "
@@ -121,12 +123,27 @@ NEVER_ALLOW = [
     ("install", re.compile(r"\b(pip3?|uv\s+pip|pipx)\s+install\b|\b(npm|pnpm|yarn)\s+(install|add|i)\s+[^;&|]*(-g\b|--global)|\bbrew\s+(install|upgrade|uninstall|tap)\b|\b(apt|apt-get|dnf|yum|pacman)\s+(install|remove|upgrade)\b|\bnpx\s")),
     ("sudo", re.compile(r"(^|[;&|(]\s*)sudo\b")),
 ]
+_LOOKUP_MCP = re.compile(r"(^|[_-])(search|get|list|read|fetch|query|find|lookup|view|describe)", re.I)
 _OUTWARD_MCP = re.compile(r"(send|post|create|delete|remove|publish|comment|reply|message|email|forward|share|update|write|trash|invite|merge|close)", re.I)
 
 
-def floor(tool, inp):
+def user_listed(tool, inp, entries):
+    """the user's own never-allow entries: plain text, ~ matches the home folder."""
+    if not entries:
+        return False
+    text = json.dumps(inp or {}, default=str) + " " + tool
+    home = os.path.expanduser("~")
+    for e in entries:
+        if e and (e in text or (e.startswith("~") and home + e[1:] in text)):
+            return True
+    return False
+
+
+def floor(tool, inp, entries=()):
     """-> the name of the rule that keeps this call with the user, or None."""
     inp = inp or {}
+    if user_listed(tool, inp, entries):
+        return "your never-allow list"
     if tool == "Bash":
         cmd = strip_comments(inp.get("command", ""))
         for name, rx in NEVER_ALLOW:
@@ -197,6 +214,10 @@ def describe(tool, inp):
         server = parts[1] if len(parts) > 1 else ""
         name = "__".join(parts[2:]) if len(parts) > 2 else tool
         args = json.dumps(inp, sort_keys=True, default=str)[:EXCERPT]
+        if _LOOKUP_MCP.search(name) and not _OUTWARD_MCP.search(name):
+            # the name says it only reads; jev still judges the arguments
+            return "lookup", "Look up items with the read-only tool %s on the MCP server %s, arguments %s" % (
+                name, server, args), []
         return "tool call", "Call the tool %s on the MCP server %s with arguments %s" % (name, server, args), []
     args = json.dumps(inp, sort_keys=True, default=str)[:EXCERPT]
     return "tool call", "Call the tool %s with arguments %s" % (tool, args), []
@@ -286,7 +307,7 @@ def handle(event):
     if mode not in ACTIVE_MODES or tool == "AskUserQuestion":
         jev.log("before", tool=tool, mode=mode, decision="pass")
         return None
-    rule = floor(tool, event.get("tool_input"))
+    rule = floor(tool, event.get("tool_input"), config.never_allow(cfg))
     if rule:
         jev.log("before", tool=tool, mode=mode, decision="ask", floor=rule)
         return None

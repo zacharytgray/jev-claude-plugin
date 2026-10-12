@@ -44,27 +44,73 @@ def claims(reply):
     return out
 
 
-def _trim(text, cap=EVIDENCE_EACH):
+_WORD = re.compile(r"[a-z0-9][a-z0-9_.$%-]{2,}")
+
+
+_STOP = set("the and for that this with are was were from has have had not but all any can its into than then "
+            "there their these those which what when where who will would should could been being also only "
+            "such each other more most some our you your they them she his her him".split())
+
+
+def _words(text):
+    return set(_WORD.findall((text or "").lower())) - _STOP
+
+
+def _trim(text, want=frozenset(), cap=EVIDENCE_EACH):
+    """keep the lines that share the most words with the claims, else head and tail.
+    head and tail alone cut out a quote from the middle of a long read (round 25, S4)."""
     if len(text) <= cap:
         return text
+    lines = text.split("\n")
+    if want:
+        # rank 3-line spans by claim words, keep the best until the budget is spent
+        spans = []
+        for i in range(0, len(lines), 3):
+            hit = len(_words("\n".join(lines[i:i + 3])) & want)
+            if hit:
+                spans.append((-hit, i))
+        keep, used = set(), 0
+        for _, i in sorted(spans):
+            size = sum(len(l) + 1 for l in lines[i:i + 3])
+            if used + size > cap:
+                continue
+            keep.update(range(i, min(i + 3, len(lines))))
+            used += size
+        if keep:
+            out, gap = [], 0
+            for n, l in enumerate(lines):
+                if n in keep:
+                    if gap:
+                        out.append("[... %d lines cut ...]" % gap)
+                        gap = 0
+                    out.append(l)
+                else:
+                    gap += 1
+            if gap:
+                out.append("[... %d lines cut ...]" % gap)
+            return "\n".join(out)
     half = cap // 2
     return text[:half] + "\n[... %d characters cut ...]\n" % (len(text) - cap) + text[-half:]
 
 
-def evidence(results):
-    """newest results first until the budget is spent, then put back in order."""
+def evidence(results, claims=()):
+    """the results that share the most words with the claims, then the newest, until the
+    budget is spent; put back in order."""
+    want = frozenset(set().union(*[_words(c) for c in claims])) if claims else frozenset()
+    recent = list(enumerate(results))[-EVIDENCE_ITEMS * 2:]
+    ranked = sorted(recent, key=lambda r: (-len(_words(r[1][2]) & want), -r[0]))
     picked, total = [], 0
-    for name, inp, text in reversed(results[-EVIDENCE_ITEMS * 2:]):
+    for idx, (name, inp, text) in ranked:
         call = inp.get("command") or inp.get("file_path") or inp.get("pattern") or inp.get("url") or ""
-        body = "%s %s\n%s" % (name, str(call)[:300], _trim(text or ""))
+        body = "%s %s\n%s" % (name, str(call)[:300], _trim(text or "", want))
         if total + len(body) > EVIDENCE_TOTAL:
-            break
-        picked.append(body)
+            continue
+        picked.append((idx, body))
         total += len(body)
         if len(picked) >= EVIDENCE_ITEMS:
             break
-    picked.reverse()
-    return {"r%d" % (i + 1): b for i, b in enumerate(picked)}
+    picked.sort()
+    return {"r%d" % (i + 1): b for i, (_, b) in enumerate(picked)}
 
 
 def passing_check(results):
@@ -104,7 +150,7 @@ def handle(event):
         return {"systemMessage": "Jev claim check skipped (no TYPESAFE_API_KEY)."}
     keyed = {"c%d" % (i + 1): c for i, c in enumerate(found)}
     state = {"request": transcript.saved_request(event.get("session_id")) or transcript.last_request(items),
-             "evidence": evidence(results), "claims": keyed}
+             "evidence": evidence(results, found), "claims": keyed}
     qs = {"backed_" + k: jev.noul(QUESTION[0].format(key=k), true=QUESTION[1], false=QUESTION[2])
           for k in keyed}
     try:

@@ -47,6 +47,9 @@ def load():
         return out
     if not isinstance(data, dict):
         return out
+    # the user's own paths and commands that Jev auto mode never allows
+    if isinstance(data.get("never_allow"), list):
+        out["never_allow"] = [str(e) for e in data["never_allow"] if isinstance(e, str) and e.strip()][:200]
     for group, switches in DEFAULTS.items():
         got = data.get(group)
         if not isinstance(got, dict):
@@ -76,3 +79,7 @@ def set_switch(dotted, value):
         f.write("\n")
     os.replace(tmp, path())
     return cfg
+
+
+def never_allow(cfg):
+    return cfg.get("never_allow") or []

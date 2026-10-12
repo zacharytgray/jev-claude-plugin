@@ -221,6 +221,22 @@ class BeforeTests(Base):
         # off by default since round 25 (S3 failed its rule)
         config.set_switch("before_call.auto_mode", True)
 
+    def test_never_allow_list_goes_to_user(self):
+        with open(config.path(), "w") as f:
+            json.dump({"before_call": {"auto_mode": True}, "never_allow": ["~/.private-state"]}, f)
+        jev.client = harm(0.1, 0.99)
+        cmd = "cat %s/.private-state/report.md" % os.path.expanduser("~")
+        self.assertIsNone(before.handle(perm_event("Bash", {"command": cmd})))
+        self.assertEqual(before.floor("Bash", {"command": "ls ~/.private-state"}, ["~/.private-state"]),
+                         "your never-allow list")
+        self.assertIsNone(before.floor("Bash", {"command": "ls ~/other"}, ["~/.private-state"]))
+
+    def test_read_only_mcp_is_a_lookup(self):
+        kind, state = before.build_state("mcp__drive__search_files", {"query": "slides"}, None)
+        self.assertEqual(kind, "lookup")
+        kind, _ = before.build_state("mcp__drive__share_file", {"id": "1"}, None)
+        self.assertEqual(kind, "tool call")
+
     def test_off_by_default(self):
         config.set_switch("before_call.auto_mode", False)
         jev.client = harm(0.4, 0.9)
@@ -348,6 +364,16 @@ class EndTests(Base):
         p = self.write_transcript([("Read", {"file_path": "a.py"}, "x")])
         jev.client = Stub(lambda q, s, _: noul(0.8))
         self.assertIsNone(end.handle(self.stop("I updated the parser.", p)))
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_keeps_the_lines_a_claim_quotes(self):
+        lines = ["filler text number %d of a long contract" % i for i in range(600)]
+        lines[300] = "Superior Proposal means a bona fide written Acquisition Proposal"
+        ev = end.evidence([("Read", {"file_path": "a.txt"}, "\n".join(lines))],
+                          ["Quote: Superior Proposal means a bona fide written Acquisition Proposal"])
+        self.assertIn("Superior Proposal means", ev["r1"])
+        self.assertLessEqual(len(ev["r1"]), end.EVIDENCE_EACH + 400)
 
 
 class ConfigAndHookTests(Base):
