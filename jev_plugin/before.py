@@ -105,6 +105,42 @@ NOULS = {
 
 EXCERPT = 1500
 
+# the floor. jevguard is never looser than its rules only because of its own
+# floor: replayed without it, jev alone allowed 1,691 of 4,284 commands the
+# rules send to a human (round 25). so these calls always go to the user, and
+# jev is not asked. code, not judgment.
+_LEAD = r"(?:^|[;&|(`]\s*|\$\(\s*|\b(?:sudo|env|xargs|exec|nohup|time)\s+)(?:\S*/)?"
+NEVER_ALLOW = [
+    ("delete", re.compile(_LEAD + r"(rm|rmdir|unlink|shred|srm|trash)\b|\bgit\s+(reset\s+--hard|clean\s+-\w*f|branch\s+-D|push\s+[^;&|]*(--force|-f\b|\+))|\bfind\b[^;&|]*\s-delete\b|\bdd\b[^;&|]*\bof=|\bmkfs|\btruncate\s")),
+    ("push", re.compile(r"\bgit\s+(-C\s+\S+\s+)?push\b")),
+    ("publishes", re.compile(r"\b(gh|glab|hub)\s+(pr|mr|issue|release|gist|repo)\s+(create|comment|edit|merge|close|review|delete|upload)\b|\b(gh|glab)\s+api\b[^;&|]*(-X\s*(POST|PUT|PATCH|DELETE)|-f\s|--input)|\b(npm|cargo|twine|gem)\s+(publish|upload|push)\b")),
+    ("credential", re.compile(r"(\.env\b|\.ssh/|id_(rsa|ed25519|ecdsa)|\.aws/credentials|\.netrc|\.npmrc|\.pypirc|\.pem\b|\.p12\b|\bsecrets?/|credentials?\.json|\btoken\b|security\s+find-(generic|internet)-password|\bkeychain\b)", re.I)),
+    ("net-to-shell", re.compile(r"\b(curl|wget|fetch)\b[^;&]*\|\s*(sudo\s+)?(ba|z|da)?sh\b|\b(curl|wget|fetch)\b[^;&]*\|\s*(python3?|perl|ruby|node)\b|(sh|bash|zsh)\s+-c\s+[\"']?\$\((curl|wget)|\beval\s+[\"']?\$\((curl|wget)")),
+    ("remote", re.compile(_LEAD + r"(ssh|scp|rsync|sftp|mosh)\b")),
+    ("service", re.compile(r"\b(launchctl\s+(load|unload|bootstrap|bootout|kickstart|start|stop|enable|disable)|systemctl\s+(start|stop|restart|reload|enable|disable|mask)|brew\s+services\s+(start|stop|restart)|docker\s+(rm|rmi|kill|stop|system\s+prune|volume\s+rm)|kill(all)?\s)")),
+    ("install", re.compile(r"\b(pip3?|uv\s+pip|pipx)\s+install\b|\b(npm|pnpm|yarn)\s+(install|add|i)\s+[^;&|]*(-g\b|--global)|\bbrew\s+(install|upgrade|uninstall|tap)\b|\b(apt|apt-get|dnf|yum|pacman)\s+(install|remove|upgrade)\b|\bnpx\s")),
+    ("sudo", re.compile(r"(^|[;&|(]\s*)sudo\b")),
+]
+_OUTWARD_MCP = re.compile(r"(send|post|create|delete|remove|publish|comment|reply|message|email|forward|share|update|write|trash|invite|merge|close)", re.I)
+
+
+def floor(tool, inp):
+    """-> the name of the rule that keeps this call with the user, or None."""
+    inp = inp or {}
+    if tool == "Bash":
+        cmd = strip_comments(inp.get("command", ""))
+        for name, rx in NEVER_ALLOW:
+            if rx.search(cmd):
+                return name
+        return None
+    if tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
+        p = inp.get("file_path") or inp.get("notebook_path") or ""
+        return "credential" if NEVER_ALLOW[3][1].search(p) else None
+    if tool.startswith("mcp__"):
+        name = tool.split("__")[-1]
+        return "outward tool" if _OUTWARD_MCP.search(name) else None
+    return None
+
 
 def strip_comments(command):
     """drop unquoted `# ...` from every line, as jevguard does."""
@@ -249,6 +285,10 @@ def handle(event):
     tool = event.get("tool_name") or ""
     if mode not in ACTIVE_MODES or tool == "AskUserQuestion":
         jev.log("before", tool=tool, mode=mode, decision="pass")
+        return None
+    rule = floor(tool, event.get("tool_input"))
+    if rule:
+        jev.log("before", tool=tool, mode=mode, decision="ask", floor=rule)
         return None
     if not jev.has_key():
         jev.log("before", tool=tool, fail_open="no key")

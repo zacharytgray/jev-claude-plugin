@@ -10,8 +10,8 @@ import re
 from . import config, jev, transcript, windows
 
 # decided by the agent in round 25, for Zach's review (product/ARCHITECTURES.md)
-RELEVANCE_CUT = 0.5
-INJECTION_CUT = 0.55
+RELEVANCE_CUT = 0.1
+INJECTION_CUT = 0.5
 SHORT_CHARS = 4000
 FAILURE_TAIL_LINES = 20
 MAX_WINDOWS = 128
