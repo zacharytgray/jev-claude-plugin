@@ -27,8 +27,12 @@ def save_request(session_id, prompt):
     os.makedirs(os.path.join(config.home(), "state"), exist_ok=True)
     old = _load(session_id)
     earlier = [x for x in (old.get("earlier") or []) + [old.get("request")] if x][-EARLIER:]
-    with open(_state_path(session_id), "w") as f:
+    # write then rename, so a hook never reads half a request
+    path = _state_path(session_id)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
         json.dump({"request": prompt, "earlier": earlier}, f)
+    os.replace(tmp, path)
 
 
 def _load(session_id):
@@ -106,6 +110,17 @@ def _is_prompt(item):
     return False
 
 
+def last_requests(items, n=EARLIER + 1):
+    """the user's last n prompts, oldest first."""
+    out = []
+    for item in reversed(items):
+        if _is_prompt(item):
+            out.append(_text_of(_content(item)).strip())
+            if len(out) >= n:
+                break
+    return out[::-1]
+
+
 def last_request(items):
     for item in reversed(items):
         if _is_prompt(item):
@@ -144,5 +159,7 @@ def turn_results(items):
                 calls[block.get("id")] = (block.get("name") or "", block.get("input") or {})
             elif block.get("type") == "tool_result":
                 name, inp = calls.get(block.get("tool_use_id"), ("", {}))
-                out.append((name, inp, _text_of(block.get("content"))))
+                text = _text_of(block.get("content"))
+                # keep the error mark: a failed call is not a passing check
+                out.append((name, inp, ("[tool error] " + text) if block.get("is_error") else text))
     return out

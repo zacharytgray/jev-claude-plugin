@@ -45,8 +45,9 @@ def ask_many(requests, deadline=DEADLINE_SECONDS, budget=BUDGET_SECONDS):
     if not requests:
         return []
     end = time.monotonic() + budget
-    with ThreadPoolExecutor(max_workers=min(WORKERS, len(requests))) as pool:
-        futures = [pool.submit(ask, s, q, deadline) for s, q in requests]
+    pool = ThreadPoolExecutor(max_workers=min(WORKERS, len(requests)))
+    futures = [pool.submit(ask, s, q, deadline) for s, q in requests]
+    try:
         out = []
         for fut in futures:
             left = end - time.monotonic()
@@ -59,6 +60,9 @@ def ask_many(requests, deadline=DEADLINE_SECONDS, budget=BUDGET_SECONDS):
             except Exception as exc:
                 raise JevError(0, type(exc).__name__)
         return out
+    finally:
+        # on a failure, drop the queued requests instead of waiting for them
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def noul(instructions, true=None, false=None):

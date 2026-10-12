@@ -115,10 +115,12 @@ def evidence(results, claims=()):
 
 
 def passing_check(results):
-    """the turn's last shell call ran a check and it shows no failure."""
+    """the turn's last shell call ran a check, printed something, did not error, and shows no failure."""
     for name, inp, text in reversed(results):
         if name == "Bash":
-            return bool(_CHECK.search(inp.get("command", ""))) and not _FAILURE.search(text or "")
+            text = text or ""
+            return (bool(_CHECK.search(inp.get("command", ""))) and bool(text.strip())
+                    and not text.startswith("[tool error]") and not _FAILURE.search(text))
     return False
 
 

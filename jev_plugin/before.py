@@ -74,8 +74,6 @@ RISK_LEVELS = [
     "reading a credentials file and copying, printing or uploading it, or posting a comment, "
     "message or email that another person will read.",
 ]
-RISK_LABELS = ["read-only", "local reversible write", "write outside the project",
-               "reaches another machine or a service", "irreversible or outward"]
 
 NOULS = {
     "touches_secrets": (
@@ -180,16 +178,16 @@ def user_listed(tool, inp, entries, cwd=None):
 
 
 def floor(tool, inp, entries=(), cwd=None):
-    """-> the name of the rule that keeps this call with the user, or None."""
+    """-> the name of the rule that keeps this call with the user, or None. when several
+    rules match, a closed one wins, so an openable rule never hides a closed one."""
     inp = inp or {}
     if user_listed(tool, inp, entries, cwd):
         return "your never-allow list"
     if tool == "Bash":
         cmd = strip_comments(inp.get("command", ""))
-        for name, rx in NEVER_ALLOW:
-            if rx.search(cmd):
-                return name
-        return None
+        hits = [name for name, rx in NEVER_ALLOW if rx.search(cmd)]
+        closed = [h for h in hits if h not in OPENABLE]
+        return (closed or hits or [None])[0]
     if tool in ("Read", "Edit", "MultiEdit", "Write", "NotebookEdit"):
         p = inp.get("file_path") or inp.get("notebook_path") or ""
         return "credential" if NEVER_ALLOW[3][1].search(p) else None
@@ -342,8 +340,7 @@ def decide(answers, rule=None, secret_text=False):
     score, conf = jev.score_of(answers["risk"], RISK_LEVELS)
     nouls = {k: jev.noul_of(answers[k]) for k in NOULS}
     asked = nouls["user_asked_for_it"]
-    level = RISK_LABELS[min(max(int(round(score)), 0), len(RISK_LABELS) - 1)]
-    reasons = ["risk %.2f (%s) at confidence %.2f" % (score, level, conf)]
+    reasons = ["risk %.2f of %d at confidence %.2f" % (score, len(RISK_LEVELS) - 1, conf)]
     hot = sorted(((v, k) for k, v in nouls.items() if k != "user_asked_for_it" and v >= ALLOW_NOUL_MAX),
                  reverse=True)
     reasons += ["%s %.2f" % (k, v) for v, k in hot]
@@ -363,7 +360,7 @@ def decide(answers, rule=None, secret_text=False):
                  and nouls["effect_is_unclear"] < ALLOW_NOUL_MAX)
     if rule:
         return ("allow" if (rule in OPENABLE and requested) else "ask"), reasons, score, conf, nouls
-    if score <= ALLOW_RISK_MAX and conf >= ALLOW_CONFIDENCE_MIN and not hot:
+    if score <= ALLOW_RISK_MAX and conf >= ALLOW_CONFIDENCE_MIN and not hot and not secret_text:
         return "allow", reasons, score, conf, nouls
     if requested:
         return "allow", reasons, score, conf, nouls
@@ -391,16 +388,20 @@ def handle(event):
         jev.log("before", tool=tool, mode=mode, decision="pass")
         return None
     rule = floor(tool, event.get("tool_input"), config.never_allow(cfg), event.get("cwd"))
-    floor_ask = _answer("ask", "Jev auto mode: this call matches the rule \"%s\", which comes to you "
-                        "unless your request asked for it." % rule)
+    floor_ask = _answer("ask", "Jev auto mode: this call matches the rule \"%s\". It needs the user's "
+                        "approval, because the user's request did not clearly ask for it." % rule)
     if not jev.has_key():
         jev.log("before", tool=tool, mode=mode, floor=rule, fail_open="no key")
         if rule:
             return floor_ask
         return {"systemMessage": "Jev auto mode is off for this call (no TYPESAFE_API_KEY); Claude Code's own permissions apply."}
     sid = event.get("session_id")
-    request = transcript.saved_request(sid) or transcript.last_request(transcript.entries(event.get("transcript_path")))
-    kind, state = build_state(tool, event.get("tool_input"), event.get("cwd"), request, transcript.saved_earlier(sid))
+    request, earlier = transcript.saved_request(sid), transcript.saved_earlier(sid)
+    if not request:
+        # no saved request: the same three prompts, from the transcript
+        recent = transcript.last_requests(transcript.entries(event.get("transcript_path")))
+        request, earlier = (recent[-1], recent[:-1]) if recent else ("", [])
+    kind, state = build_state(tool, event.get("tool_input"), event.get("cwd"), request, earlier)
     questions = build_questions(kind)
     try:
         answers = jev.ask(state, questions)

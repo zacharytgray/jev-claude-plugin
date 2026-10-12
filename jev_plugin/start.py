@@ -34,6 +34,22 @@ MODELS = {
 STRONGEST = "opus"
 
 
+def _description(head):
+    """the frontmatter description, also when it is a folded or literal block (> or |)."""
+    m = re.search(r"^description:[ \t]*(.*)$", head, re.M)
+    if not m:
+        return ""
+    first = m.group(1).strip()
+    if first and first[0] not in ">|":
+        return first.strip("\"'")
+    rest = []
+    for line in head[m.end():].split("\n")[1:]:
+        if line.strip() and not line[:1].isspace():
+            break
+        rest.append(line.strip())
+    return " ".join(x for x in rest if x)
+
+
 def skills_on_disk(cwd):
     """name -> description, from the user's and the project's SKILL.md files."""
     roots = [os.path.expanduser("~/.claude/skills")]
@@ -47,10 +63,10 @@ def skills_on_disk(cwd):
                     head = f.read(4000)
             except OSError:
                 continue
-            m = re.search(r"^description:\s*(.+)$", head, re.M)
             name = os.path.basename(os.path.dirname(p))
-            if m:
-                out[name] = m.group(1).strip().strip("\"'")[:400]
+            desc = _description(head)
+            if desc and name not in out:
+                out[name] = desc[:400]
             if len(out) >= MAX_SKILLS:
                 return out
     return out

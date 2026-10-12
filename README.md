@@ -16,7 +16,9 @@ The design, its open questions and the evidence behind each choice live in the `
 | start | `UserPromptSubmit` | suggests an effort and a model for the request (shown to you; no hook can set either), and hints skills from your words | off |
 | end | `Stop` | splits the final reply into claims and checks each against this turn's tool results; sends the agent back once if a claim has nothing behind it | off |
 
-Outputs of 4,000 characters or less skip relevance and are only checked for injection. If the line finder finds nothing,
+Outputs of 4,000 characters or less skip relevance and are only checked for injection. Bash stderr is checked for
+injection too, and a line longer than 4,000 characters is checked in pieces, so every character the agent sees has
+been screened. The saved full Bash output keeps what relevance hid, never what injection withheld. If the line finder finds nothing,
 fails, or needs more than 10 Jev calls for a region, the whole region stays withheld. On a failure the hook can see
 (a traceback, a failed test summary), the question becomes "why did this fail", stack traces are never split, and the
 last 20 lines always stay. When no window passes, the plain output goes through.
