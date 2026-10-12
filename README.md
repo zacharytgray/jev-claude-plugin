@@ -29,7 +29,8 @@ What the paid tests changed (round 25, 8,801 Jev requests in all; the fixes were
   shape kept 0.973 of needed lines at the 0.1 cut. Relevance and injection are asked in separate requests.
 - Jev auto mode starts off. Behind the generic floor it still allowed 68 of 344 calls labelled ask or deny, all under
   rules about one user's machine. List your own never-allow paths and commands in `config.json` as
-  `"never_allow": ["~/.private-dir", "some-command"]`; matching calls always come to you. Read-only MCP tools
+  `"never_allow": ["~/.private-dir", "some-command"]`; matching calls always come to you. A path the call names
+  counts when it resolves under a listed folder, so `../../.private-dir` and quoted paths match too. Read-only MCP tools
   (search, get, list and similar) are described to Jev as lookups.
 - The claims check stays off. Its evidence is the lines that share the claims' words, and its cut is 0.3. That sends
   back 9.3% of passing runs but only 28.0% of failing ones, because many wrong answers quote real text.

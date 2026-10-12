@@ -127,8 +127,9 @@ _LOOKUP_MCP = re.compile(r"(^|[_-])(search|get|list|read|fetch|query|find|lookup
 _OUTWARD_MCP = re.compile(r"(send|post|create|delete|remove|publish|comment|reply|message|email|forward|share|update|write|trash|invite|merge|close)", re.I)
 
 
-def user_listed(tool, inp, entries):
-    """the user's own never-allow entries: plain text, ~ matches the home folder."""
+def user_listed(tool, inp, entries, cwd=None):
+    """the user's own never-allow entries: plain text, ~ matches the home folder,
+    and any path the call names that resolves under a listed one."""
     if not entries:
         return False
     text = json.dumps(inp or {}, default=str) + " " + tool
@@ -136,13 +137,18 @@ def user_listed(tool, inp, entries):
     for e in entries:
         if e and (e in text or (e.startswith("~") and home + e[1:] in text)):
             return True
+    listed = [os.path.realpath(os.path.expanduser(e)) for e in entries if e and e[0] in "~/"]
+    for p in describe(tool, inp)[2]:
+        full = _resolve(p, cwd)
+        if any(full == d or full.startswith(d + os.sep) for d in listed):
+            return True
     return False
 
 
-def floor(tool, inp, entries=()):
+def floor(tool, inp, entries=(), cwd=None):
     """-> the name of the rule that keeps this call with the user, or None."""
     inp = inp or {}
-    if user_listed(tool, inp, entries):
+    if user_listed(tool, inp, entries, cwd):
         return "your never-allow list"
     if tool == "Bash":
         cmd = strip_comments(inp.get("command", ""))
@@ -188,6 +194,12 @@ def describe(tool, inp):
     inp = inp or {}
     if tool == "Bash":
         return "shell command", strip_comments(inp.get("command", "")), _bash_paths(inp.get("command", ""))
+    if tool == "Read":
+        p = inp.get("file_path", "")
+        return "file read", "Read the file %s" % p, [p]
+    if tool in ("Grep", "Glob"):
+        p = inp.get("path") or "."
+        return "file search", "Search the files under %s for %s" % (p, inp.get("pattern", "")), [p]
     if tool in ("Edit", "MultiEdit"):
         p = inp.get("file_path", "")
         if tool == "Edit":
@@ -223,11 +235,16 @@ def describe(tool, inp):
     return "tool call", "Call the tool %s with arguments %s" % (tool, args), []
 
 
-_PATH = re.compile(r"(?:^|\s|=)((?:~|/)[^\s'\";|&<>]*)")
+# a path starts at a word boundary, a quote, @, = or a bracket: absolute, ~, or ./ ../
+_PATH = re.compile(r"""(?:^|(?<=[\s'"=@(<>]))((?:~(?=/|$|[\s'"])|/|\.\.?/)[^\s'";|&<>()`]*)""", re.M)
 
 
 def _bash_paths(command):
     return [m.group(1) for m in _PATH.finditer(command or "")]
+
+
+def _resolve(p, cwd):
+    return os.path.realpath(os.path.join(cwd or ".", os.path.expanduser(p)))
 
 
 def git_root(path):
@@ -246,7 +263,7 @@ def inside(paths, cwd):
     for p in paths:
         if not p:
             continue
-        full = os.path.realpath(os.path.join(cwd or ".", os.path.expanduser(p)))
+        full = _resolve(p, cwd)
         if full == root or full.startswith(root + os.sep):
             continue
         if full.startswith(("/tmp/", "/private/tmp/", "/dev/null")) or full in ("/tmp", "/dev/null"):
@@ -307,7 +324,7 @@ def handle(event):
     if mode not in ACTIVE_MODES or tool == "AskUserQuestion":
         jev.log("before", tool=tool, mode=mode, decision="pass")
         return None
-    rule = floor(tool, event.get("tool_input"), config.never_allow(cfg))
+    rule = floor(tool, event.get("tool_input"), config.never_allow(cfg), event.get("cwd"))
     if rule:
         jev.log("before", tool=tool, mode=mode, decision="ask", floor=rule)
         return None
