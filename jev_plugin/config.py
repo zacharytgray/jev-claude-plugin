@@ -12,7 +12,7 @@ import tempfile
 
 DEFAULTS = {
     "after_call": {"relevance": True, "injection": True},
-    "before_call": {"auto_mode": True},
+    "before_call": {"auto_mode": False},
     "start": {"effort": False, "model": False, "skills": False},
     "end": {"claims_backed": False},
 }

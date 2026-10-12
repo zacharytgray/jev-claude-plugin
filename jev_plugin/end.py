@@ -8,7 +8,7 @@ import re
 
 from . import config, jev, transcript
 
-BACKED_CUT = 0.2
+BACKED_CUT = 0.1
 MAX_CLAIMS = 12
 EVIDENCE_ITEMS = 12
 EVIDENCE_EACH = 4000

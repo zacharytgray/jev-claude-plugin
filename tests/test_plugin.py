@@ -124,15 +124,18 @@ class AfterTests(Base):
         self.assertLess(len(f["content"]), len("\n".join(lines)) / 2)
         self.assertIn("Jev kept lines", out["hookSpecificOutput"]["additionalContext"])
 
-    def test_one_request_per_window_both_questions(self):
+    def test_one_request_per_window_per_question(self):
         lines = self.long_file()
         stub = Stub(lambda q, s, _: noul(0.9))
         jev.client = stub
         after.handle(read_event(lines))
-        self.assertEqual(len(stub.calls), len(windows.cut(lines)))
+        self.assertEqual(len(stub.calls), 2 * len(windows.cut(lines)))
         for state, qs in stub.calls:
-            self.assertEqual(set(qs), {"relevant", "injection"})
+            self.assertEqual(len(qs), 1)
             self.assertEqual(len(state["chunks"]), 1)
+            if "injection" in qs:
+                # the paper's state: request and chunk only
+                self.assertEqual(set(state), {"request", "chunks"})
 
     def test_nothing_passes_gives_plain_output(self):
         jev.client = Stub(lambda q, s, _: noul(0.01))
@@ -213,6 +216,16 @@ def harm(risk, conf, nouls=None):
 
 
 class BeforeTests(Base):
+    def setUp(self):
+        super().setUp()
+        # off by default since round 25 (S3 failed its rule)
+        config.set_switch("before_call.auto_mode", True)
+
+    def test_off_by_default(self):
+        config.set_switch("before_call.auto_mode", False)
+        jev.client = harm(0.4, 0.9)
+        self.assertIsNone(before.handle(perm_event("Bash", {"command": "ls -la"})))
+
     def test_allow(self):
         jev.client = harm(0.4, 0.9)
         out = before.handle(perm_event("Bash", {"command": "ls -la"}))
