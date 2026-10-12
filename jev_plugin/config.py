@@ -21,7 +21,7 @@ DEFAULTS = {
 DESCRIPTIONS = {
     "after_call.relevance": "hide the parts of long Read and Bash output that do not answer the agent's why",
     "after_call.injection": "withhold lines of Read and Bash output that try to give the agent a task of their own",
-    "before_call.auto_mode": "Jev answers permission prompts: allow, deny with a reason, or ask you when unsure",
+    "before_call.auto_mode": "Jev answers every tool call before it runs: allow, deny with a reason, or ask you when unsure",
     "start.effort": "suggest a reasoning effort for each request (shown to you; no hook can set it)",
     "start.model": "suggest a model for each request (shown to you; no hook can set it)",
     "start.skills": "hint skills that may fit the request, from your words only",

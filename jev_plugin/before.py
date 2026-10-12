@@ -1,9 +1,11 @@
-"""before the call: jev auto mode (PermissionRequest).
+"""before the call: jev auto mode (PreToolUse, every tool call).
 
-the user's own allow and deny rules settle calls first; this hook only sees
-what claude code would ask about. one jev request: jevguard's risk Score and
-five Nouls, generalized from bash to every tool. code maps the answers to
-allow, deny with a reason, or nothing, which leaves claude code's own prompt.
+it stands in for claude code's own auto mode: every call that can touch the
+machine gets an answer, not only the ones claude code would ask about. code
+floor first, then one jev request: jevguard's risk Score and five Nouls,
+generalized from bash to every tool. code maps the answers to allow, deny
+with a reason, or ask the user. if jev fails, claude code's own permission
+flow takes over.
 """
 
 import json
@@ -21,8 +23,10 @@ DENY_RISK_MIN = 3.40
 DENY_CONFIDENCE_MIN = 0.75
 DENY_NOUL_MIN = 0.80
 
-# modes where the hook answers. auto stays claude code's own, so nothing doubles
-ACTIVE_MODES = {"default", "acceptEdits"}
+# bypassPermissions means the user turned every check off, so the hook stays out
+QUIET_MODES = {"bypassPermissions"}
+# tools that only talk to the user or plan; they touch nothing on the machine
+INERT_TOOLS = {"AskUserQuestion", "TodoWrite", "ExitPlanMode", "EnterPlanMode", "Task", "Agent", "Skill"}
 
 STANDING_RULES = (
     "This agent runs on the user's own computer as the user {user}, and the user may not be "
@@ -315,22 +319,27 @@ def decide(answers):
     return "ask", reasons, score, conf, nouls
 
 
+def _answer(decision, reason):
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision,
+                                   "permissionDecisionReason": reason}}
+
+
 def handle(event):
     cfg = config.load()
     if not config.on(cfg, "before_call.auto_mode"):
         return None
     mode = event.get("permission_mode") or "default"
     tool = event.get("tool_name") or ""
-    if mode not in ACTIVE_MODES or tool == "AskUserQuestion":
+    if mode in QUIET_MODES or tool in INERT_TOOLS:
         jev.log("before", tool=tool, mode=mode, decision="pass")
         return None
     rule = floor(tool, event.get("tool_input"), config.never_allow(cfg), event.get("cwd"))
     if rule:
         jev.log("before", tool=tool, mode=mode, decision="ask", floor=rule)
-        return None
+        return _answer("ask", "Jev auto mode: this call matches the rule \"%s\", which always comes to you." % rule)
     if not jev.has_key():
         jev.log("before", tool=tool, fail_open="no key")
-        return {"systemMessage": "Jev auto mode is off for this call (no TYPESAFE_API_KEY); you are asked as usual."}
+        return {"systemMessage": "Jev auto mode is off for this call (no TYPESAFE_API_KEY); Claude Code's own permissions apply."}
     kind, state = build_state(tool, event.get("tool_input"), event.get("cwd"))
     questions = build_questions(kind)
     try:
@@ -338,17 +347,14 @@ def handle(event):
         decision, reasons, score, conf, nouls = decide(answers)
     except jev.JevError as exc:
         jev.log("before", tool=tool, fail_open=str(exc.status or exc.body))
-        return {"systemMessage": "Jev auto mode could not answer (jev %s); you are asked as usual." % (exc.status or "error")}
+        return {"systemMessage": "Jev auto mode could not answer (jev %s); Claude Code's own permissions apply." % (exc.status or "error")}
     jev.log("before", tool=tool, mode=mode, decision=decision, risk=round(score, 3),
             confidence=round(conf, 3), nouls={k: round(v, 3) for k, v in nouls.items()})
     if decision == "allow":
-        return {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
-                                       "decision": {"behavior": "allow"}}}
+        return _answer("allow", "Jev auto mode: %s." % reasons[0])
     if decision == "deny":
-        msg = ("Jev auto mode denied this call: %s. Find a safer way, or ask the user to run it."
-               % "; ".join(reasons))
-        return {"hookSpecificOutput": {"hookEventName": "PermissionRequest",
-                                       "decision": {"behavior": "deny", "message": msg}},
-                "systemMessage": "Jev auto mode denied a %s call (%s)." % (tool, reasons[0])}
-    # ask: no decision, so claude code shows its own prompt
-    return None
+        out = _answer("deny", "Jev auto mode denied this call: %s. Find a safer way, or ask the user to run it."
+                      % "; ".join(reasons))
+        out["systemMessage"] = "Jev auto mode denied a %s call (%s)." % (tool, reasons[0])
+        return out
+    return _answer("ask", "Jev auto mode is not sure: %s." % "; ".join(reasons))

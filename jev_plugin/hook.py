@@ -11,7 +11,7 @@ from . import after, before, end, jev, start
 
 HANDLERS = {
     "PostToolUse": after.handle,
-    "PermissionRequest": before.handle,
+    "PreToolUse": before.handle,
     "UserPromptSubmit": start.handle,
     "Stop": end.handle,
 }

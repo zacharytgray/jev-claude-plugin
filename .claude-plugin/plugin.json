@@ -1,6 +1,6 @@
 {
   "name": "jev",
   "version": "0.1.0",
-  "description": "Jev, TypeSafe's System One model, at four points around Claude Code's tool calls: a relevance and injection filter on Read and Bash output, a Jev auto mode for permission prompts, start hints, and a claims-backed check at the end. Every feature has a switch.",
+  "description": "Jev, TypeSafe's System One model, at four points around Claude Code's tool calls: a relevance and injection filter on Read and Bash output, a Jev auto mode that answers every tool call, start hints, and a claims-backed check at the end. Every feature has a switch.",
   "author": {"name": "Zachary Gray"}
 }

@@ -1,10 +1,10 @@
 {
-  "description": "Jev at four points: after Read and Bash, at permission prompts, at the start of a request, and at the stop.",
+  "description": "Jev at four points: after Read and Bash, before every tool call, at the start of a request, and at the stop.",
   "hooks": {
     "PostToolUse": [
       {"matcher": "Read|Bash", "hooks": [{"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/jev-hook\"", "timeout": 30}]}
     ],
-    "PermissionRequest": [
+    "PreToolUse": [
       {"matcher": "*", "hooks": [{"type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/bin/jev-hook\"", "timeout": 15}]}
     ],
     "UserPromptSubmit": [

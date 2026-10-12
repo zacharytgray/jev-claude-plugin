@@ -24,7 +24,7 @@ sh "${CLAUDE_PLUGIN_ROOT}/bin/jev-switch" <name> on|off
 |---|---|
 | `after_call.relevance` | hide the parts of long Read and Bash output that do not answer the agent's why |
 | `after_call.injection` | withhold lines of Read and Bash output that try to give the agent a task of their own |
-| `before_call.auto_mode` | Jev answers permission prompts: allow, deny with a reason, or ask the user when unsure |
+| `before_call.auto_mode` | Jev answers every tool call before it runs: allow, deny with a reason, or ask the user when unsure |
 | `start.effort` | suggest a reasoning effort per request, shown to the user |
 | `start.model` | suggest a model per request, shown to the user |
 | `start.skills` | hint skills that may fit the request, from the user's words only |

@@ -203,7 +203,7 @@ class AfterTests(Base):
 
 
 def perm_event(tool, inp, mode="default", cwd="/tmp"):
-    return {"hook_event_name": "PermissionRequest", "tool_name": tool, "tool_input": inp,
+    return {"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": inp,
             "permission_mode": mode, "cwd": cwd, "session_id": "s1"}
 
 
@@ -228,7 +228,7 @@ class BeforeTests(Base):
             json.dump({"before_call": {"auto_mode": True}, "never_allow": ["~/.private-state"]}, f)
         jev.client = harm(0.1, 0.99)
         cmd = "cat %s/.private-state/report.md" % os.path.expanduser("~")
-        self.assertIsNone(before.handle(perm_event("Bash", {"command": cmd})))
+        self.assertEqual(before.handle(perm_event("Bash", {"command": cmd}))["hookSpecificOutput"]["permissionDecision"], "ask")
         self.assertEqual(before.floor("Bash", {"command": "ls ~/.private-state"}, ["~/.private-state"]),
                          "your never-allow list")
         self.assertIsNone(before.floor("Bash", {"command": "ls ~/other"}, ["~/.private-state"]))
@@ -264,31 +264,43 @@ class BeforeTests(Base):
     def test_allow(self):
         jev.client = harm(0.4, 0.9)
         out = before.handle(perm_event("Bash", {"command": "ls -la"}))
-        self.assertEqual(out["hookSpecificOutput"]["decision"]["behavior"], "allow")
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "allow")
 
     def test_deny_with_reason(self):
         jev.client = harm(3.8, 0.9, {"destroys_data_irreversibly": 0.95})
         out = before.handle(perm_event("Bash", {"command": "python3 wipe.py --all"}))
-        d = out["hookSpecificOutput"]["decision"]
-        self.assertEqual(d["behavior"], "deny")
-        self.assertIn("safer way", d["message"])
+        d = out["hookSpecificOutput"]
+        self.assertEqual(d["permissionDecision"], "deny")
+        self.assertIn("safer way", d["permissionDecisionReason"])
 
-    def test_ask_leaves_prompt(self):
+    def test_unsure_asks_user(self):
         jev.client = harm(2.0, 0.9)
-        self.assertIsNone(before.handle(perm_event("Bash", {"command": "pip install x"})))
+        out = before.handle(perm_event("Bash", {"command": "make install-local"}))
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
         jev.client = harm(0.5, 0.9, {"reaches_other_machine": 0.5})
-        self.assertIsNone(before.handle(perm_event("Bash", {"command": "curl -X POST x"})))
+        out = before.handle(perm_event("Bash", {"command": "curl -X POST x"}))
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
 
-    def test_auto_and_bypass_modes_untouched(self):
-        jev.client = Fails()
-        for mode in ("auto", "bypassPermissions", "plan", "dontAsk"):
-            self.assertIsNone(before.handle(perm_event("Bash", {"command": "ls"}, mode=mode)))
+    def test_answers_every_mode_but_bypass(self):
+        jev.client = harm(0.1, 0.99)
+        for mode in ("default", "acceptEdits", "auto", "plan", "dontAsk"):
+            out = before.handle(perm_event("Bash", {"command": "ls"}, mode=mode))
+            self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "allow", mode)
+        self.assertIsNone(before.handle(perm_event("Bash", {"command": "ls"}, mode="bypassPermissions")))
 
-    def test_jev_down_asks_user(self):
+    def test_reads_are_judged_too(self):
+        stub = harm(0.0, 1.0)
+        jev.client = stub
+        out = before.handle(perm_event("Read", {"file_path": "/tmp/a.txt"}))
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "allow")
+        self.assertEqual(stub.calls[0][0]["command"], "Read the file /tmp/a.txt")
+        self.assertIsNone(before.handle(perm_event("TodoWrite", {"todos": []})))
+
+    def test_jev_down_falls_back_to_claude_code(self):
         jev.client = Fails()
         out = before.handle(perm_event("Bash", {"command": "ls"}))
         self.assertNotIn("hookSpecificOutput", out)
-        self.assertIn("asked as usual", out["systemMessage"])
+        self.assertIn("own permissions apply", out["systemMessage"])
 
     def test_comments_stripped(self):
         stub = harm(0.4, 0.9)
@@ -302,7 +314,7 @@ class BeforeTests(Base):
                     "ssh host ls", "gh pr create -t x", "pip install requests", "sudo ls",
                     "cd a && rm x", "git -C repo push", "launchctl kickstart -k gui/1/x"):
             self.assertIsNotNone(before.floor("Bash", {"command": cmd}), cmd)
-            self.assertIsNone(before.handle(perm_event("Bash", {"command": cmd})), cmd)
+            self.assertEqual(before.handle(perm_event("Bash", {"command": cmd}))["hookSpecificOutput"]["permissionDecision"], "ask", cmd)
         for cmd in ("ls -la", "python3 -m pytest", "git status", "make build", "grep -rn count src"):
             self.assertIsNone(before.floor("Bash", {"command": cmd}), cmd)
         self.assertEqual(before.floor("Read", {"file_path": "/home/u/.ssh/id_ed25519"}), "credential")
