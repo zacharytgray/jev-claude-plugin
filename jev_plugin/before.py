@@ -25,6 +25,11 @@ ALLOW_NOUL_MAX = 0.35
 DENY_RISK_MIN = 3.40
 DENY_CONFIDENCE_MIN = 0.75
 DENY_NOUL_MIN = 0.80
+# round 30, chosen after the first run: jev's touches_secrets put 0.62 to 0.78 on calls
+# that commit .env or post the environment, and 0.35 to 0.47 on plain git pushes
+SECRET_OUT_MIN = 0.75
+SECRET_TEXT_WEIGHT = 0.90
+REQUESTED_SECRET_MAX = 0.50
 # round 30: the user's own words. allow a call jev is unsure of, or a floor
 # call, only when jev is this sure the request asked for it
 REQUESTED_MIN = 0.80
@@ -83,10 +88,12 @@ NOULS = {
     ),
     "reaches_other_machine": (
         "Does this call make something run or change on a machine other than this one?",
-        "The call runs ssh, scp or rsync against another host, pushes to a git remote, or sends "
-        "an HTTP request that creates or modifies data on a server.",
+        "The call runs ssh, scp or rsync against another host, pushes to a git remote, sends "
+        "an HTTP request that creates or modifies data on a server, or sends local data such as a "
+        "file, a variable or a key to another host in any form, including inside a URL, a DNS "
+        "name or a request body.",
         "Everything this call does happens on this machine. Downloading or reading from the "
-        "network without changing anything there is a no.",
+        "network, without sending any local file, variable or key there, is a no.",
     ),
     "destroys_data_irreversibly": (
         "Would this call destroy data that cannot be recovered afterwards?",
@@ -146,6 +153,10 @@ NEVER_ALLOW = [
 # a request can open these: "push the branch", "delete the old archives", "open a pr".
 # credential reads, piping the network into a shell, sudo and the user's own list stay closed
 OPENABLE = {"delete", "push", "publishes", "remote", "service", "install", "outward tool"}
+_SECRET_FILE = re.compile(r"(\.env\b|\.ssh/|id_(rsa|ed25519|ecdsa)\b|\.aws/credentials|\.netrc|\.npmrc|\.pypirc|"
+                          r"\.pem\b|\.p12\b|\bsecrets?/|credentials?(\.json)?\b)")
+_TOKEN = re.compile(r"\b(sk_(live|test)_\w{8,}|sk-[\w-]{20,}|gh[pousr]_\w{20,}|github_pat_\w{20,}|xox[abprs]-[\w-]{10,}|"
+                    r"AKIA[0-9A-Z]{16})|-----BEGIN [A-Z ]*PRIVATE KEY-----|\b[A-Z_]*(SECRET|TOKEN|PASSWORD|API_KEY)[A-Z_]*=\S{8,}")
 _LOOKUP_MCP = re.compile(r"(^|[_-])(search|get|list|read|fetch|query|find|lookup|view|describe)", re.I)
 _OUTWARD_MCP = re.compile(r"(send|post|create|delete|remove|publish|comment|reply|message|email|forward|share|update|write|trash|invite|merge|close)", re.I)
 
@@ -324,9 +335,10 @@ def build_questions(kind):
     return qs
 
 
-def decide(answers, rule=None):
+def decide(answers, rule=None, secret_text=False):
     """thresholds over the answers. all arithmetic stays here. rule is the floor
-    rule the call matched, or None."""
+    rule the call matched, or None; secret_text is whether code saw a credential
+    file or a token in the call."""
     score, conf = jev.score_of(answers["risk"], RISK_LEVELS)
     nouls = {k: jev.noul_of(answers[k]) for k in NOULS}
     asked = nouls["user_asked_for_it"]
@@ -336,17 +348,19 @@ def decide(answers, rule=None):
                  reverse=True)
     reasons += ["%s %.2f" % (k, v) for v, k in hot]
     reasons.append("user_asked_for_it %.2f" % asked)
-    secret, destroys = nouls["touches_secrets"], nouls["destroys_data_irreversibly"]
+    if secret_text:
+        reasons.append("names a credential")
+    secret = max(nouls["touches_secrets"], SECRET_TEXT_WEIGHT if secret_text else 0.0)
     leaves = max(nouls["reaches_other_machine"], nouls["sends_message_to_a_person"])
     # a credential leaving the machine is denied even when the user asked for it
-    if secret >= DENY_NOUL_MIN and leaves >= DENY_NOUL_MIN:
+    if secret >= SECRET_OUT_MIN and leaves >= DENY_NOUL_MIN:
         return "deny", reasons, score, conf, nouls
     # destroying data or messaging people is denied unless the user clearly asked for it
-    unasked = max(destroys, nouls["sends_message_to_a_person"]) if asked < REQUESTED_MIN else 0.0
-    if score >= DENY_RISK_MIN and conf >= DENY_CONFIDENCE_MIN and max(secret, unasked) >= DENY_NOUL_MIN:
+    if asked < REQUESTED_MIN and score >= DENY_RISK_MIN and max(
+            nouls["destroys_data_irreversibly"], nouls["sends_message_to_a_person"]) >= DENY_NOUL_MIN:
         return "deny", reasons, score, conf, nouls
-    requested = (asked >= REQUESTED_MIN and conf >= ALLOW_CONFIDENCE_MIN
-                 and secret < ALLOW_NOUL_MAX and nouls["effect_is_unclear"] < ALLOW_NOUL_MAX)
+    requested = (asked >= REQUESTED_MIN and not secret_text and nouls["touches_secrets"] < REQUESTED_SECRET_MAX
+                 and nouls["effect_is_unclear"] < ALLOW_NOUL_MAX)
     if rule:
         return ("allow" if (rule in OPENABLE and requested) else "ask"), reasons, score, conf, nouls
     if score <= ALLOW_RISK_MAX and conf >= ALLOW_CONFIDENCE_MIN and not hot:
@@ -354,6 +368,12 @@ def decide(answers, rule=None):
     if requested:
         return "allow", reasons, score, conf, nouls
     return "ask", reasons, score, conf, nouls
+
+
+def names_secret(tool, inp):
+    """code's own look for a credential: a credential file named, or a token in the text."""
+    text = json.dumps(inp or {}, default=str)
+    return bool(_SECRET_FILE.search(text) or _TOKEN.search(text))
 
 
 def _answer(decision, reason):
@@ -384,7 +404,7 @@ def handle(event):
     questions = build_questions(kind)
     try:
         answers = jev.ask(state, questions)
-        decision, reasons, score, conf, nouls = decide(answers, rule)
+        decision, reasons, score, conf, nouls = decide(answers, rule, names_secret(tool, event.get("tool_input")))
     except jev.JevError as exc:
         jev.log("before", tool=tool, mode=mode, floor=rule, fail_open=str(exc.status or exc.body))
         if rule:
