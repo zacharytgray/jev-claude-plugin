@@ -11,13 +11,13 @@ The design, its open questions and the evidence behind each choice live in the `
 
 | point | hook | what it does | starts |
 |---|---|---|---|
-| after the call | `PostToolUse` on Read and Bash | cuts long output into windows of at most 40 lines and 4,000 characters, each overlapping the next by half; each window, with its path and line range, gets two Jev requests, one for relevance and one for injection; keeps windows with relevance of 0.1 or more; a window flagged at 0.5 or more is cut again into windows of 10 lines and asked again, and only the lines of the flagged small windows are withheld; Read keeps its original line numbers | on |
+| after the call | `PostToolUse` on Read and Bash | cuts long output into windows of at most 40 lines and 4,000 characters, each overlapping the next by half; each window, with its path and line range, gets two Jev requests, one for relevance and one for injection; keeps windows with relevance of 0.1 or more; windows flagged at 0.5 or more that overlap or touch merge into one region, where a Jev line finder picks the first and last planted line, as in the jev-harness paper, and only that span is withheld, then the region is asked again until it is clear; Read keeps its original line numbers | on |
 | before the call | `PreToolUse`, every tool | Jev auto mode, in place of Claude Code's own: jevguard's risk Score and five yes/no questions, generalized past Bash, plus whether your own request asked for the call; allow, deny with a reason, or ask you. A code floor (deletes, pushes, publishing, credential reads, network-to-shell, remote shells, services, installs, sudo, outward MCP tools) is never allowed on Jev's word alone: deletes, pushes, publishing, remote shells, services, installs and outward tools are allowed only when your request asked for them | off |
 | start | `UserPromptSubmit` | suggests an effort and a model for the request (shown to you; no hook can set either), and hints skills from your words | off |
 | end | `Stop` | splits the final reply into claims and checks each against this turn's tool results; sends the agent back once if a claim has nothing behind it | off |
 
-Outputs of 4,000 characters or less skip relevance and are only checked for injection. If narrowing finds nothing, or
-fails, the whole flagged window stays withheld. On a failure the hook can see
+Outputs of 4,000 characters or less skip relevance and are only checked for injection. If the line finder finds nothing,
+fails, or needs more than 10 Jev calls for a region, the whole region stays withheld. On a failure the hook can see
 (a traceback, a failed test summary), the question becomes "why did this fail", stack traces are never split, and the
 last 20 lines always stay. When no window passes, the plain output goes through.
 
