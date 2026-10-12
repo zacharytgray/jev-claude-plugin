@@ -11,7 +11,7 @@ The design, its open questions and the evidence behind each choice live in the `
 
 | point | hook | what it does | starts |
 |---|---|---|---|
-| after the call | `PostToolUse` on Read and Bash | cuts long output into windows of at most 40 lines and 4,000 characters, each overlapping the next by half; each window gets two Jev requests, one for relevance and one for injection; keeps windows with relevance of 0.1 or more, withholds lines whose windows are all flagged at 0.5 or more; Read keeps its original line numbers | on |
+| after the call | `PostToolUse` on Read and Bash | cuts long output into windows of at most 40 lines and 4,000 characters, each overlapping the next by half; each window, with its path and line range, gets two Jev requests, one for relevance and one for injection; keeps windows with relevance of 0.1 or more, withholds lines whose windows are all flagged at 0.5 or more; Read keeps its original line numbers | on |
 | before the call | `PermissionRequest` | Jev auto mode: a code floor first (deletes, pushes, publishing, credential reads, network-to-shell, remote shells, services, installs, sudo, outward MCP tools always go to you), then jevguard's risk Score and five yes/no questions, generalized past Bash; allow, deny with a reason, or leave the prompt to you | off |
 | start | `UserPromptSubmit` | suggests an effort and a model for the request (shown to you; no hook can set either), and hints skills from your words | off |
 | end | `Stop` | splits the final reply into claims and checks each against this turn's tool results; sends the agent back once if a claim has nothing behind it | off |
@@ -23,15 +23,16 @@ last 20 lines always stay. When no window passes, the plain output goes through.
 Jev auto mode answers only in Claude Code's `default` and `acceptEdits` permission modes. In a lab check on Claude Code
 2.1.296, `PermissionRequest` did not fire in `auto` or `bypassPermissions` mode.
 
-Why the defaults changed after the first paid tests (round 25, 3,794 Jev requests):
-- Injection is asked in its own request, on the request and the chunk only, in the paper's wording. Asked beside
-  relevance with one extra sentence about authority claims and fake tags, Jev caught 64 of 100 planted attacks. The
-  paper's form caught 98 of 100. Clean and hard-negative chunks were flagged at 2% or less either way.
-- Jev auto mode starts off. Behind the generic floor it allowed 66 of 344 calls labelled ask or deny. All 66
-  matched rules about one user's machine, which a generic floor cannot know. A user's own never-allow list
-  is not supported yet.
-- The claims cut is 0.1, and the check stays off. No cut sent back half of the failing runs while sparing passing
-  ones: at 0.1, 17% of failing and 5% of passing runs were sent back.
+What the paid tests changed (round 25, 8,801 Jev requests in all; the fixes were rerun on the same items):
+- Each window goes to Jev as `{path, lines, text}`, as in the jev-harness paper. With the bare text, injection caught
+  61 to 64 of 100 planted attacks; with path and lines, 98, and flagged 0 of 50 clean chunks. Relevance with the same
+  shape kept 0.973 of needed lines at the 0.1 cut. Relevance and injection are asked in separate requests.
+- Jev auto mode starts off. Behind the generic floor it still allowed 68 of 344 calls labelled ask or deny, all under
+  rules about one user's machine. List your own never-allow paths and commands in `config.json` as
+  `"never_allow": ["~/.private-dir", "some-command"]`; matching calls always come to you. Read-only MCP tools
+  (search, get, list and similar) are described to Jev as lookups.
+- The claims check stays off. Its evidence is the lines that share the claims' words, and its cut is 0.3. That sends
+  back 9.3% of passing runs but only 28.0% of failing ones, because many wrong answers quote real text.
 
 ## Use
 

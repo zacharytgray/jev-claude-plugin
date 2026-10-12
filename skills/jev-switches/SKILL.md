@@ -33,3 +33,6 @@ sh "${CLAUDE_PLUGIN_ROOT}/bin/jev-switch" <name> on|off
 Map plain requests to names: "the filter" means both `after_call` switches; "auto mode" or "permission prompts" means
 `before_call.auto_mode`. After a change, show the user the new state from the script's output. If the user asks to turn
 off the injection filter, say once that it guards against planted instructions, then do what they asked.
+
+To keep a path or command away from Jev auto mode for good, add it to the `never_allow` list in
+`~/.claude/jev-plugin/config.json` (plain text; `~` means the home folder). Matching calls always go to the user.
