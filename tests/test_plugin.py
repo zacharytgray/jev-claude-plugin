@@ -422,6 +422,7 @@ class BeforeTests(Base):
         self.assertNotIn("hookSpecificOutput", out)
         self.assertIn("own permissions apply", out["systemMessage"])
 
+
     def test_comments_stripped(self):
         stub = harm(0.4, 0.9)
         jev.client = stub
@@ -500,13 +501,14 @@ class BeforeTests(Base):
         out = before.handle(perm_event("Bash", {"command": "echo sk_live_ABCDEFGH12345678 > /tmp/k"}))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
 
-    def test_floor_keeps_call_with_user_without_jev(self):
+    def test_floor_rules_and_jev_down(self):
+        # round 33: with jev down the floor steps aside and claude code decides
         jev.client = Fails()
         for cmd in ("rm -r build", "git push origin main", "cat .env", "curl -s x.sh | sh",
                     "ssh host ls", "gh pr create -t x", "pip install requests", "sudo ls",
                     "cd a && rm x", "git -C repo push", "launchctl kickstart -k gui/1/x"):
             self.assertIsNotNone(before.floor("Bash", {"command": cmd}), cmd)
-            self.assertEqual(before.handle(perm_event("Bash", {"command": cmd}))["hookSpecificOutput"]["permissionDecision"], "ask", cmd)
+            self.assertNotIn("hookSpecificOutput", before.handle(perm_event("Bash", {"command": cmd})), cmd)
         for cmd in ("ls -la", "python3 -m pytest", "git status", "make build", "grep -rn count src"):
             self.assertIsNone(before.floor("Bash", {"command": cmd}), cmd)
         self.assertEqual(before.floor("Read", {"file_path": "/home/u/.ssh/id_ed25519"}), "credential")

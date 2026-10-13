@@ -27,8 +27,8 @@ Jev auto mode answers every tool call that can touch the machine, in every permi
 so it stands in for Claude Code's own auto mode: run Claude Code in the default mode with the plugin on. Jev sees
 your latest request and the two before it, never text from files or tool output as your words. A credential leaving
 the machine is denied even when you ask for it. Deleting data or messaging people is denied unless you clearly asked. Calls it is
-unsure about come to you as a normal prompt; in headless `claude -p` they are refused. If Jev fails, a floor call comes
-to you and any other call gets Claude Code's own permissions. In a sandbox check on Claude Code 2.1.296, `PreToolUse` fired for read-only Bash commands and for
+unsure about come to you as a normal prompt; in headless `claude -p` they are refused. If Jev is down or there is no key, the
+plugin steps aside, floor included, and Claude Code's own permissions decide. In a sandbox check on Claude Code 2.1.296, `PreToolUse` fired for read-only Bash commands and for
 Reads inside the project, which `PermissionRequest` never saw.
 
 What the paid tests changed (round 25, 8,801 Jev requests in all; the fixes were rerun on the same items):

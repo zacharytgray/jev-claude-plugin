@@ -7,8 +7,8 @@ bash to every tool, plus whether the user's own request asked for the
 operation. code maps the answers to allow, deny with a reason, or ask the
 user. the code floor never lets a call through on jev's word alone: a floor
 call is allowed only when the user asked for it, and only for the rules the
-user's words can open. if jev fails, a floor call asks the user and any other
-call goes to claude code's own permission flow.
+user's words can open. if jev is down or there is no key, the plugin steps
+aside, floor included: claude code's own permission flow decides (round 33).
 """
 
 import json
@@ -392,8 +392,6 @@ def handle(event):
                         "approval, because the user's request did not clearly ask for it." % rule)
     if not jev.has_key():
         jev.log("before", tool=tool, mode=mode, floor=rule, fail_open="no key")
-        if rule:
-            return floor_ask
         return {"systemMessage": "Jev auto mode is off for this call (no TYPESAFE_API_KEY); Claude Code's own permissions apply."}
     sid = event.get("session_id")
     request, earlier = transcript.saved_request(sid), transcript.saved_earlier(sid)
@@ -408,8 +406,6 @@ def handle(event):
         decision, reasons, score, conf, nouls = decide(answers, rule, names_secret(tool, event.get("tool_input")))
     except jev.JevError as exc:
         jev.log("before", tool=tool, mode=mode, floor=rule, fail_open=str(exc.status or exc.body))
-        if rule:
-            return floor_ask
         return {"systemMessage": "Jev auto mode could not answer (jev %s); Claude Code's own permissions apply." % (exc.status or "error")}
     jev.log("before", tool=tool, mode=mode, decision=decision, floor=rule, risk=round(score, 3),
             confidence=round(conf, 3), nouls={k: round(v, 3) for k, v in nouls.items()})
