@@ -514,6 +514,15 @@ class BeforeTests(Base):
         out = before.handle(perm_event("Bash", {"command": "cat .env"}))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
 
+    def test_request_cut_is_065(self):
+        # round 34: a delete the user asked for at 0.69 opens; 0.60 still asks
+        jev.client = harm(1.4, 0.9, {"user_asked_for_it": 0.69})
+        out = before.handle(perm_event("Bash", {"command": "rm -- README-de.md"}))
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "allow")
+        jev.client = harm(1.4, 0.9, {"user_asked_for_it": 0.60})
+        out = before.handle(perm_event("Bash", {"command": "rm -- README-de.md"}))
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+
     def test_request_allows_an_unsure_call(self):
         jev.client = harm(2.0, 0.9, {"user_asked_for_it": 0.9})
         out = before.handle(perm_event("Bash", {"command": "make install-local"}))
