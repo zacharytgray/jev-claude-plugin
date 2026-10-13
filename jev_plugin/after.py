@@ -2,8 +2,12 @@
 
 two jev requests per window, one per question, all run in parallel.
 code decides from the answers; jev never sees more than one window.
+Read and Bash get both questions. every other tool that can bring outside text
+in gets injection only, on the text fields of its response (round 33).
 """
 
+import copy
+import json
 import os
 import re
 
@@ -296,6 +300,10 @@ def handle(event):
     tool = event.get("tool_name")
     inp = event.get("tool_input") or {}
     resp = event.get("tool_response")
+    if tool not in ("Read", "Bash"):
+        if injection and tool not in NO_OUTSIDE_TEXT:
+            return handle_other(event, tool, inp, resp)
+        return None
     if not isinstance(resp, dict):
         return None
     if tool == "Read":
@@ -398,6 +406,77 @@ def handle(event):
     if user_msg:
         result["systemMessage"] = user_msg
     return result
+
+
+# tools whose output brings no outside text in: what the agent wrote, the user's own answers, or
+# a subagent's reply, whose own tool calls were filtered already (round 33)
+NO_OUTSIDE_TEXT = {"Edit", "Write", "MultiEdit", "NotebookEdit", "TodoWrite", "ToolSearch", "AskUserQuestion",
+                   "EnterPlanMode", "ExitPlanMode", "Agent", "Task", "Skill"}
+TEXT_MIN_CHARS = 20  # shorter strings are ids, names and flags
+_NOT_TEXT_KEYS = {"type", "mimeType", "mime_type", "data", "blob", "encoding"}
+
+
+def text_leaves(x, path=()):
+    """every string in a tool response that can hold outside text, with its path. -> [(path, text)]."""
+    if isinstance(x, str):
+        # base64 and other blobs have no spaces
+        if len(x) >= TEXT_MIN_CHARS and not (len(x) > 200 and not re.search(r"\s", x)):
+            return [(path, x)]
+        return []
+    out = []
+    if isinstance(x, dict):
+        for k, v in x.items():
+            if k not in _NOT_TEXT_KEYS:
+                out += text_leaves(v, path + (k,))
+    elif isinstance(x, list):
+        for i, v in enumerate(x):
+            out += text_leaves(v, path + (i,))
+    return out
+
+
+def _put(x, path, value):
+    if not path:
+        return value
+    x = copy.copy(x)
+    x[path[0]] = _put(x[path[0]], path[1:], value)
+    return x
+
+
+def handle_other(event, tool, inp, resp):
+    """the general path for every other tool (web pages, mcp tools, grep): injection only, on each text
+    field of the response, lines numbered across all of them. relevance stays on Read and Bash."""
+    leaves = text_leaves(resp)
+    if not leaves:
+        return None
+    lines, owner = [], []
+    for n, (_, text) in enumerate(leaves):
+        part = text.split("\n")
+        lines += part
+        owner += [n] * len(part)
+    if not jev.has_key():
+        return _fail_open("no TYPESAFE_API_KEY in the environment")
+    items = transcript.entries(event.get("transcript_path"))
+    request = _request(event, items)
+    command = "%s %s" % (tool, json.dumps(inp, default=str)[:300])
+    try:
+        verdict = judge(lines, request, request, command, False, True, False, "%s output" % tool, 1)
+    except jev.JevError as exc:
+        return _fail_open("jev %s" % (exc.status or exc.body))
+    if verdict is None:
+        return None
+    _, withheld, info = verdict
+    jev.log("after", tool=tool, leaves=len(leaves), **info)
+    if not any(withheld):
+        return None
+    out = resp
+    for n, (path, text) in enumerate(leaves):
+        rows = [i for i, o in enumerate(owner) if o == n]
+        w = [withheld[i] for i in rows]
+        if any(w):
+            out = _put(out, path, windows.render_plain([lines[i] for i in rows], [True] * len(rows), w))
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedToolOutput": out,
+                                   "additionalContext": WITHHELD_NOTE},
+            "systemMessage": "Jev withheld part of a %s output that looked like instructions to the agent." % tool}
 
 
 def _stderr_only(resp, err_out):
