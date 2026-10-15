@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import config, jev_client
 
-MODEL = "jev-1.13.0"
+MODEL = "jev-1.14.0"
 
 # per request. the paper's recorded p95 sets it (see the README)
 DEADLINE_SECONDS = 4.0
