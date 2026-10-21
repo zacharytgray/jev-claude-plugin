@@ -1,0 +1,11 @@
+{
+  "name": "jev-claude-plugin",
+  "owner": {"name": "jev-claude-plugin maintainers"},
+  "plugins": [
+    {
+      "name": "jev",
+      "source": "./",
+      "description": "Jev, TypeSafe's System One model, around Claude Code's tool calls: an output filter, an autonomy-first auto mode, start hints and a claims check."
+    }
+  ]
+}

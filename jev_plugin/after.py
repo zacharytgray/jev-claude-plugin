@@ -13,7 +13,7 @@ import re
 
 from . import config, jev, transcript, windows
 
-# decided by the agent in round 25, for Zach's review (product/ARCHITECTURES.md)
+# decided by the agent in round 25, for the maintainer's review (product/ARCHITECTURES.md)
 RELEVANCE_CUT = 0.1
 INJECTION_CUT = 0.5
 SHORT_CHARS = 4000

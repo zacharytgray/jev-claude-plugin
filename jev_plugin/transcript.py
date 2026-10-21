@@ -140,6 +140,22 @@ def last_agent_text(items, limit=600):
     return ""
 
 
+def previous_agent_text(items, request="", limit=600):
+    """what the latest request answered: the agent's words between the user's
+    last two prompts, so "yes, do that" reads against the proposal. when the
+    transcript lags behind the saved request, the newest prompt is not in it
+    yet, and the answer is the tail."""
+    prompts = [i for i, item in enumerate(items) if _is_prompt(item)]
+    if not prompts:
+        span = items if request else []
+    elif request and _text_of(_content(items[prompts[-1]])).strip() != request.strip():
+        span = items[prompts[-1] + 1:]
+    else:
+        span = items[(prompts[-2] + 1 if len(prompts) > 1 else 0):prompts[-1]]
+    texts = [_text_of(_content(item)).strip() for item in span if item.get("type") == "assistant"]
+    return "\n".join(t for t in texts if t)[-limit:]
+
+
 def turn_results(items):
     """[(tool_name, input, result_text)] since the last user prompt, oldest first."""
     calls = {}

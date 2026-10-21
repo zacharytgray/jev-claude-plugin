@@ -1,5 +1,5 @@
 # jev_client.py - the TypeSafe System One (Jev) client, stdlib only.
-# vendored from hermes-dispatch's canonical copy, 2026-10-11. keep it a copy, not an import.
+# vendored from a shared copy, 2026-10-11. keep it a copy, not an import.
 
 import http.client
 import json
@@ -41,7 +41,7 @@ _REDACTIONS = (
     (re.compile(r"(?i)TYPESAFE_API_KEY\s*=\s*\S*"), "TYPESAFE_API_KEY=<redacted>"),
 )
 
-# school-brain's local addition: jev reads dates and counts badly, so free text
+# jev reads dates and counts badly, so free text
 # is stripped of them before it goes into state or criteria
 _SCRUB = re.compile(
     r"\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+)?"
@@ -63,7 +63,7 @@ def scrub(text):
 
 def redact(text):
     # an error body can echo the request back, auth header and all, and the
-    # body lands on JevError and in ~/.hermes/logs. strip it, then truncate
+    # body lands on JevError and in logs. strip it, then truncate
     text = text if isinstance(text, str) else str(text or "")
     key = os.environ.get("TYPESAFE_API_KEY")
     if key and len(key) >= 8:

@@ -4,7 +4,7 @@
     JEV_API_URL=http://127.0.0.1:8765/v1/systemone TYPESAFE_API_KEY=lab-fake claude --plugin-dir .
 
 relevance is high only for a window holding LAB_KEEP; injection only for one
-holding LAB_ATTACK. the harm score is low, so permission prompts are allowed.
+holding LAB_ATTACK. every other noul is low, so auto mode allows.
 """
 
 import json

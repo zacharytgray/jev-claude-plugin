@@ -2,7 +2,10 @@
 
 A Claude Code plugin that puts Jev (TypeSafe's System One model) at four points around tool calls. The design and its
 decisions live in the `jev-harness` repo under `product/` (`ARCHITECTURES.md`, "The converged design"). This repo is the
-build. Nothing in it is admitted as the product design; only Zach admits, in a round there.
+build. Nothing in it is admitted as the product design; only the maintainer admits, in a round there.
+
+Keep the repo free of personal detail: no maintainer or user names, hostnames, home paths, private repo names or
+personal services. Write "the user" and use general paths.
 
 ## How to verify
 
