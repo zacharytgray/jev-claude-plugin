@@ -99,3 +99,7 @@ python3 -m unittest discover -s tests -t .
 
 `tests/fake_jev.py` is a fake Jev endpoint for checking the wiring in a real Claude Code session without a key
 (`JEV_API_URL` points the client at it).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
